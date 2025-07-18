@@ -1,0 +1,105 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "blue-green-app.fullname" . }}
+  labels:
+    {{- include "blue-green-app.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    # Blue-Green specific annotations
+    blue-green.io/active-environment: {{ .Values.blueGreen.activeEnvironment }}
+    blue-green.io/deployment-strategy: "blue-green"
+    nginx.ingress.kubernetes.io/upstream-vhost: {{ (index .Values.ingress.hosts 0).host }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- range .Values.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "blue-green-app.fullname" $ }}-active
+                port:
+                  number: {{ $.Values.service.port }}
+          {{- end }}
+    {{- end }}
+
+---
+# Direct access to Blue environment (for testing)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "blue-green-app.fullname" . }}-blue
+  labels:
+    {{- include "blue-green-app.labels" . | nindent 4 }}
+    environment: blue
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  rules:
+    - host: blue.{{ (index .Values.ingress.hosts 0).host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "blue-green-app.fullname" . }}-blue
+                port:
+                  number: {{ .Values.service.port }}
+
+---
+# Direct access to Green environment (for testing)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "blue-green-app.fullname" . }}-green
+  labels:
+    {{- include "blue-green-app.labels" . | nindent 4 }}
+    environment: green
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  rules:
+    - host: green.{{ (index .Values.ingress.hosts 0).host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "blue-green-app.fullname" . }}-green
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

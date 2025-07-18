@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "blue-green-app.fullname" . }}-{{ .Values.environment.name }}
+  labels:
+    {{- include "blue-green-app.labels" . | nindent 4 }}
+    environment: {{ .Values.environment.name }}
+data:
+  app.json: |
+    {
+      "environment": "{{ .Values.environment.name }}",
+      "version": "{{ .Values.image.tag }}",
+      "features": {
+        "userManagement": {{ if ge (.Values.image.tag | toString) "2.0.0" }}true{{ else }}false{{ end }},
+        "advancedSearch": {{ if ge (.Values.image.tag | toString) "2.1.0" }}true{{ else }}false{{ end }},
+        "realTimeNotifications": {{ if ge (.Values.image.tag | toString) "2.2.0" }}true{{ else }}false{{ end }},
+        "analytics": {{ if ge (.Values.image.tag | toString) "3.0.0" }}true{{ else }}false{{ end }}
+      },
+      "database": {
+        "host": "{{ .Values.database.host | default "localhost" }}",
+        "port": {{ .Values.database.port | default 5432 }},
+        "name": "{{ .Values.database.name | default "ecommerce" }}"
+      },
+      "monitoring": {
+        "enabled": {{ .Values.monitoring.enabled | default true }},
+        "metricsPath": "/metrics",
+        "healthPath": "/health"
+      }
+    }
+  nginx.conf: |
+    server {
+        listen 8080;
+        server_name _;
+        
+        location / {
+            proxy_pass http://localhost:3000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        
+        location /health {
+            access_log off;
+            proxy_pass http://localhost:3000/health;
+        }
+    }

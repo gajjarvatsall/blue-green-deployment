@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "blue-green-app.fullname" . }}-{{ .Values.environment.name }}
+  labels:
+    {{- include "blue-green-app.labels" . | nindent 4 }}
+    environment: {{ .Values.environment.name }}
+    service-type: environment
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "blue-green-app.selectorLabels" . | nindent 4 }}
+    environment: {{ .Values.environment.name }}
+
+---
+# Active Service (points to currently active environment)
+{{- if eq .Values.environment.name .Values.blueGreen.activeEnvironment }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "blue-green-app.fullname" . }}-active
+  labels:
+    {{- include "blue-green-app.labels" . | nindent 4 }}
+    service-type: active
+  annotations:
+    blue-green.io/active-environment: {{ .Values.blueGreen.activeEnvironment }}
+    blue-green.io/last-updated: {{ now | date "2006-01-02T15:04:05Z" }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "blue-green-app.selectorLabels" . | nindent 4 }}
+    environment: {{ .Values.blueGreen.activeEnvironment }}
+{{- end }}
