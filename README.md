@@ -1,4 +1,4 @@
-# 🔵🟢 Blue-Green Deployment Demo
+# Zero-Downtime Blue-Green Deployment System
 
 A comprehensive demonstration of Blue-Green deployment strategy using Node.js, Docker, Kubernetes, and Helm.
 
