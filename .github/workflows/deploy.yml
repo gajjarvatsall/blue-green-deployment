@@ -1,0 +1,68 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/blue-green-demo-app:1.0.0 .
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/blue-green-demo-app:1.0.0
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v1
+        with:
+          version: 'latest'
+
+      - name: Configure Kubernetes context
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig.yaml
+          export KUBECONFIG=kubeconfig.yaml
+
+      - name: Deploy to Kubernetes (Blue)
+        run: |
+          helm upgrade --install blue-green-app ./helm/blue-green-app \
+            --set image.tag=1.0.0 \
+            --set environment.name=blue
+
+      - name: Check deployment health
+        run: |
+          chmod +x ./check-deployment-health.sh
+          ./check-deployment-health.sh blue
+
+      - name: Switch traffic
+        run: |
+          chmod +x ./switch-traffic.sh
+          ./switch-traffic.sh blue
+
+    
+  completed:
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Complete deployment
+        run: |
+          echo "Deployment completed with status: ${{ job.status }}"
+        
