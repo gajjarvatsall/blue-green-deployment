@@ -1,21 +1,6 @@
-# 🔵🟢 Blue-Green Deployment Demo
+# Zero-Downtime Blue-Green Deployment System
 
 A comprehensive demonstration of Blue-Green deployment strategy using Node.js, Docker, Kubernetes, and Helm.
-
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [Deployment Guide](#deployment-guide)
-- [Monitoring & Health Checks](#monitoring--health-checks)
-- [API Endpoints](#api-endpoints)
-- [Configuration](#configuration)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
 
 ## 🎯 Overview
 
