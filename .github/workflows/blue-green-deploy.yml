@@ -68,6 +68,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Debug build outputs
+        run: |
+          echo "🐛 Debug Information:"
+          echo "Tags: ${{ steps.meta.outputs.tags }}"
+          echo "Labels: ${{ steps.meta.outputs.labels }}"
+          echo "Image digest: ${{ steps.build.outputs.digest }}"
+
   determine-environment:
     runs-on: ubuntu-latest
     needs: build
@@ -126,12 +133,22 @@ jobs:
         run: |
           # Extract image tag from build output
           IMAGE_TAG=$(echo '${{ needs.build.outputs.image-tag }}' | head -n1)
-          echo "Loading image: $IMAGE_TAG"
+          echo "Raw image tags: ${{ needs.build.outputs.image-tag }}"
+          echo "Selected image tag: $IMAGE_TAG"
+
+          # Validate that IMAGE_TAG is not empty
+          if [ -z "$IMAGE_TAG" ]; then
+            echo "❌ Error: IMAGE_TAG is empty"
+            echo "Available tags: ${{ needs.build.outputs.image-tag }}"
+            exit 1
+          fi
 
           # Pull the image from Docker Hub
+          echo "Pulling image: $IMAGE_TAG"
           docker pull $IMAGE_TAG
 
           # Load image into KIND cluster
+          echo "Loading image into KIND cluster..."
           kind load docker-image $IMAGE_TAG --name ${{ env.CLUSTER_NAME }}
 
       - name: Deploy to target environment
@@ -139,14 +156,26 @@ jobs:
           TARGET_ENV: ${{ needs.determine-environment.outputs.target-env }}
         run: |
           IMAGE_TAG=$(echo '${{ needs.build.outputs.image-tag }}' | head -n1)
+
+          # Validate IMAGE_TAG
+          if [ -z "$IMAGE_TAG" ]; then
+            echo "❌ Error: IMAGE_TAG is empty"
+            echo "Available tags: ${{ needs.build.outputs.image-tag }}"
+            exit 1
+          fi
+
           VERSION=$(echo $IMAGE_TAG | cut -d: -f2)
+          IMAGE_REPO=$(echo $IMAGE_TAG | cut -d: -f1)
 
           echo "🚀 Deploying to $TARGET_ENV environment"
+          echo "📦 Image: $IMAGE_TAG"
+          echo "🏷️  Version: $VERSION"
+          echo "📍 Repository: $IMAGE_REPO"
 
           helm upgrade --install blue-green-demo-$TARGET_ENV ./blue-green-app \
             --set environment.name=$TARGET_ENV \
             --set image.tag=$VERSION \
-            --set image.repository=$(echo $IMAGE_TAG | cut -d: -f1) \
+            --set image.repository=$IMAGE_REPO \
             --wait --timeout=5m
 
       - name: Wait for deployment
