@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "blue-green-app.fullname" . }}-health-checker
+  labels:
+    {{- include "blue-green-app.labels" . | nindent 4 }}
+    component: health-checker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "blue-green-app.selectorLabels" . | nindent 6 }}
+      component: health-checker
+  template:
+    metadata:
+      labels:
+        {{- include "blue-green-app.selectorLabels" . | nindent 8 }}
+        component: health-checker
+    spec:
+      containers:
+      - name: health-checker
+        image: "{{ .Values.healthChecker.image.repository }}:{{ .Values.healthChecker.image.tag }}"
+        imagePullPolicy: {{ .Values.healthChecker.image.pullPolicy }}
+        ports:
+        - containerPort: 3001
+          name: http
+        env:
+        - name: BLUE_SERVICE_URL
+          value: "http://{{ include "blue-green-app.fullname" . }}-blue"
+        - name: GREEN_SERVICE_URL
+          value: "http://{{ include "blue-green-app.fullname" . }}-green"
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+          {{- toYaml .Values.healthChecker.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "blue-green-app.fullname" . }}-health-checker
+  labels:
+    {{- include "blue-green-app.labels" . | nindent 4 }}
+    component: health-checker
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 3001
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "blue-green-app.selectorLabels" . | nindent 4 }}
+    component: health-checker
