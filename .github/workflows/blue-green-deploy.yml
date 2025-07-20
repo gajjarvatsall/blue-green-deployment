@@ -30,7 +30,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
+      image-tag: ${{ steps.get-tag.outputs.image_tag }}
       image-digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: Checkout code
@@ -57,6 +57,13 @@ jobs:
             type=raw,value=${{ github.event.inputs.version }},enable=${{ github.event.inputs.version != '' }}
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Extract primary image tag
+        id: get-tag
+        run: |
+          PRIMARY_TAG=$(echo "${{ steps.meta.outputs.tags }}" | grep -E '^docker.io/.+:(latest|sha-)' | head -n1)
+          echo "image_tag=$PRIMARY_TAG" >> $GITHUB_OUTPUT
+          echo "✅ Primary tag selected: $PRIMARY_TAG"
+
       - name: Build and push Docker image
         id: build
         uses: docker/build-push-action@v5
@@ -67,13 +74,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Debug build outputs
-        run: |
-          echo "🐛 Debug Information:"
-          echo "Tags: ${{ steps.meta.outputs.tags }}"
-          echo "Labels: ${{ steps.meta.outputs.labels }}"
-          echo "Image digest: ${{ steps.build.outputs.digest }}"
 
   determine-environment:
     runs-on: ubuntu-latest
@@ -94,9 +94,7 @@ jobs:
       - name: Determine target environment
         id: determine
         run: |
-          # Get current active environment
           ACTIVE=$(kubectl get configmap blue-green-config -o jsonpath='{.data.active-environment}' 2>/dev/null || echo "blue")
-
           if [ "${{ github.event.inputs.environment }}" = "auto" ] || [ -z "${{ github.event.inputs.environment }}" ]; then
             if [ "$ACTIVE" = "blue" ]; then
               TARGET="green"
@@ -131,46 +129,33 @@ jobs:
 
       - name: Load Docker image to KIND
         run: |
-          # Extract image tag from build output
-          IMAGE_TAG=$(echo '${{ needs.build.outputs.image-tag }}' | head -n1)
-          echo "Raw image tags: ${{ needs.build.outputs.image-tag }}"
-          echo "Selected image tag: $IMAGE_TAG"
-
-          # Validate that IMAGE_TAG is not empty
+          IMAGE_TAG="${{ needs.build.outputs.image-tag }}"
+          echo "📦 Selected image tag: $IMAGE_TAG"
           if [ -z "$IMAGE_TAG" ]; then
             echo "❌ Error: IMAGE_TAG is empty"
-            echo "Available tags: ${{ needs.build.outputs.image-tag }}"
             exit 1
           fi
 
-          # Pull the image from Docker Hub
-          echo "Pulling image: $IMAGE_TAG"
           docker pull $IMAGE_TAG
-
-          # Load image into KIND cluster
-          echo "Loading image into KIND cluster..."
           kind load docker-image $IMAGE_TAG --name ${{ env.CLUSTER_NAME }}
 
       - name: Deploy to target environment
         env:
           TARGET_ENV: ${{ needs.determine-environment.outputs.target-env }}
         run: |
-          IMAGE_TAG=$(echo '${{ needs.build.outputs.image-tag }}' | head -n1)
-
-          # Validate IMAGE_TAG
+          IMAGE_TAG="${{ needs.build.outputs.image-tag }}"
           if [ -z "$IMAGE_TAG" ]; then
             echo "❌ Error: IMAGE_TAG is empty"
-            echo "Available tags: ${{ needs.build.outputs.image-tag }}"
             exit 1
           fi
 
           VERSION=$(echo $IMAGE_TAG | cut -d: -f2)
           IMAGE_REPO=$(echo $IMAGE_TAG | cut -d: -f1)
 
-          echo "🚀 Deploying to $TARGET_ENV environment"
-          echo "📦 Image: $IMAGE_TAG"
-          echo "🏷️  Version: $VERSION"
-          echo "📍 Repository: $IMAGE_REPO"
+          echo "🚀 Deploying to $TARGET_ENV"
+          echo "🖼️  Image: $IMAGE_TAG"
+          echo "🔖 Version: $VERSION"
+          echo "📍 Repo: $IMAGE_REPO"
 
           helm upgrade --install blue-green-demo-$TARGET_ENV ./blue-green-app \
             --set environment.name=$TARGET_ENV \
@@ -198,7 +183,7 @@ jobs:
           cluster_name: ${{ env.CLUSTER_NAME }}
           config: kind-config.yaml
 
-      - name: Run comprehensive health checks
+      - name: Run health checks
         run: |
           chmod +x ./scripts/health-check.sh
           ./scripts/health-check.sh ${{ needs.determine-environment.outputs.target-env }}
@@ -207,21 +192,16 @@ jobs:
         run: |
           TARGET_ENV=${{ needs.determine-environment.outputs.target-env }}
           SERVICE_NAME="blue-green-demo-$TARGET_ENV-blue-green-app"
-
-          # Port forward for testing
           kubectl port-forward service/$SERVICE_NAME 8080:3000 &
           PF_PID=$!
           sleep 5
 
-          # Run basic performance test
           for i in {1..10}; do
-            echo "Performance test $i/10"
             curl -f http://localhost:8080/health || exit 1
             curl -f http://localhost:8080/ || exit 1
           done
 
           kill $PF_PID
-          echo "✅ Performance tests completed"
 
   traffic-switch:
     runs-on: ubuntu-latest
@@ -245,7 +225,6 @@ jobs:
       - name: Verify traffic switch
         run: |
           sleep 10
-          # Test the main ingress endpoint
           kubectl port-forward service/ingress-nginx-controller -n ingress-nginx 8080:80 &
           PF_PID=$!
           sleep 5
@@ -265,8 +244,8 @@ jobs:
       - name: Deployment notification
         run: |
           if [ "${{ needs.traffic-switch.result }}" = "success" ]; then
-            echo "✅ Blue-Green deployment successful!"
-            echo "🎯 Traffic switched to: ${{ needs.determine-environment.outputs.target-env }}"
+            echo "✅ Deployment successful!"
+            echo "🔁 Traffic switched to: ${{ needs.determine-environment.outputs.target-env }}"
           else
             echo "❌ Deployment failed or traffic switch was skipped"
           fi
